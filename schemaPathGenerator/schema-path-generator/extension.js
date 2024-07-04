@@ -4,31 +4,37 @@ function activate(context) {
 
     let disposable = vscode.commands.registerCommand('schema-path-generator.SchemaPathGenerator', async function () {
         const editor = vscode.window.activeTextEditor;
+        const document = editor.document;
 
         if (editor) {
-            const document = editor.document;
-            const json = document.getText();
-            let jsonObject;
-
-            // loading Json
-            try {
-                jsonObject = JSON.parse(json);
-            } catch (error) {
-                vscode.window.showErrorMessage('Error parsing JSON');
-                return;
-            }
-
             const selection = editor.selection;
             let selectedAttribute = selection.isEmpty ? '' : document.getText(selection);
 
             if (selectedAttribute) {
-                await findSelectedAttributePaths(jsonObject, selectedAttribute);
+                let selectionStartAt = selection.start;  // {c: 35, e: 13}
+                const selectionEndsAt = selection.end;    // {c: 35, e: 23}
+
+                const range = new vscode.Range(selectionStartAt, selectionEndsAt);
+
+                // Get the document text copy
+                let documentText = document.getText();
+
+                // Edit json temporarily in memory: selectedAttribute -> :selectedAttribute
+                let modifiedText = documentText.substring(0, document.offsetAt(range.start)) + ":" + selectedAttribute + documentText.substring(document.offsetAt(range.end));
+
+                // Load json
+                let jsonObject = loadJsonObject(modifiedText);
+
+                // Find path for chosen attribute
+                await findSelectedAttributePaths(jsonObject, ":" + selectedAttribute);
             } else {
+                let documentText = document.getText();
+                let jsonObject = loadJsonObject(documentText);
                 await promptForAttributeNameAndHandle(jsonObject);
             }
         }
     });
-
+    
     context.subscriptions.push(disposable);
 }
 
@@ -60,13 +66,20 @@ function findPaths(data, targetPhrase) {
     return result;
 }
 
-async function findSelectedAttributePaths(jsonObject, selectedAttribute) {
-    const paths = findPaths(jsonObject, selectedAttribute);
-    // TODO: find selected Attribute path (just that 1, not all paths with selected name)
+async function findSelectedAttributePaths(jsonObject, selectedAttributeNewName) {
+    const paths = findPaths(jsonObject, selectedAttributeNewName);
+
     if (paths.length === 0) {
-        vscode.window.showInformationMessage(`No attribute found with name: ${selectedAttribute}`);
+        selectedAttributeNewName = selectedAttributeNewName.replace(":", "");
+        vscode.window.showInformationMessage(`No attribute found with name: ${selectedAttributeNewName}`);
     } else {
-        await displayPaths(paths);
+        // remove ":" from path
+        let stringToCopy = arrayToString(paths[0]);
+        stringToCopy = stringToCopy.replace(/:/g, "");
+
+        // copy path to clipboard
+        await vscode.env.clipboard.writeText(stringToCopy);
+        vscode.window.showInformationMessage(`Copied to clipboard: ${stringToCopy}`);
     }
 }
 
@@ -104,6 +117,16 @@ async function displayPaths(paths) {
 
 function arrayToString(arr) {
     return `['${arr.join("']['")}']`;
+}
+
+function loadJsonObject(jsonText) {
+    // Loading Json
+    try {
+        return JSON.parse(jsonText);
+    } catch (error) {
+        vscode.window.showErrorMessage('Error parsing JSON');
+        return;
+    }
 }
 
 function deactivate() { }

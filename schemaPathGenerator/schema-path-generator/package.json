@@ -4,7 +4,7 @@
   "description": "Extension for generating attribute full path from schema",
   "publisher": "Djolka",
   "icon": "icon/icon.png",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "engines": {
     "vscode": "^1.90.0"
   },
@@ -16,10 +16,21 @@
   ],
   "main": "./extension.js",
   "contributes": {
-    "commands": [{
-      "command": "schema-path-generator.SchemaPathGenerator",
-      "title": "Schema Path Generator"
-    }]
+    "commands": [
+      {
+        "command": "schema-path-generator.SchemaPathGenerator",
+        "title": "Generate Schema Path"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "when": "editorLangId == json && editorHasSelection",
+          "command": "schema-path-generator.SchemaPathGenerator",
+          "group": "navigation"
+        }
+      ]
+    }
   },
   "scripts": {
     "lint": "eslint .",
