@@ -4,15 +4,16 @@
   "description": "Extension for generating attribute full path from schema",
   "publisher": "Djolka",
   "icon": "icon/icon.png",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other"
   ],
   "activationEvents": [
-    "onCommand: schema-path-generator.SchemaPathGenerator"
+    "onCommand:schema-path-generator.SchemaPathGenerator",
+    "onCommand:form-path-generator.FormPathGenerator"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -20,6 +21,10 @@
       {
         "command": "schema-path-generator.SchemaPathGenerator",
         "title": "Generate Schema Path"
+      },
+      {
+        "command": "form-path-generator.FormPathGenerator",
+        "title": "Generate Form Path"
       }
     ],
     "menus": {
@@ -27,6 +32,11 @@
         {
           "when": "editorLangId == json && editorHasSelection",
           "command": "schema-path-generator.SchemaPathGenerator",
+          "group": "navigation"
+        },
+        {
+          "when": "editorLangId == json && editorHasSelection",
+          "command": "form-path-generator.FormPathGenerator",
           "group": "navigation"
         }
       ]
@@ -38,12 +48,11 @@
     "test": "vscode-test"
   },
   "devDependencies": {
-    "@types/vscode": "^1.90.0",
-    "@types/mocha": "^10.0.6",
+    "@types/vscode": "^1.101.0",
+    "@types/mocha": "^10.0.10",
     "@types/node": "20.x",
-    "eslint": "^8.57.0",
-    "typescript": "^5.4.5",
-    "@vscode/test-cli": "^0.0.9",
-    "@vscode/test-electron": "^2.4.0"
+    "eslint": "^9.25.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.5.2"
   }
 }
