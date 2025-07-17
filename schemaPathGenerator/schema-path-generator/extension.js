@@ -1,45 +1,51 @@
 const vscode = require('vscode');
 
 function activate(context) {
-
-    let disposable = vscode.commands.registerCommand('schema-path-generator.SchemaPathGenerator', async function () {
-        const editor = vscode.window.activeTextEditor;
-        const document = editor.document;
-
-        if (editor) {
-            const selection = editor.selection;
-            let selectedAttribute = selection.isEmpty ? '' : document.getText(selection);
-
-            if (selectedAttribute) {
-                let selectionStartAt = selection.start;  // {c: 35, e: 13}
-                const selectionEndsAt = selection.end;    // {c: 35, e: 23}
-
-                const range = new vscode.Range(selectionStartAt, selectionEndsAt);
-
-                // Get the document text copy
-                let documentText = document.getText();
-
-                // Edit json temporarily in memory: selectedAttribute -> :selectedAttribute
-                let modifiedText = documentText.substring(0, document.offsetAt(range.start)) + ":" + selectedAttribute + documentText.substring(document.offsetAt(range.end));
-
-                // Load json
-                let jsonObject = loadJsonObject(modifiedText);
-
-                // Find path for chosen attribute
-                await findSelectedAttributePaths(jsonObject, ":" + selectedAttribute);
-            } else {
-                let documentText = document.getText();
-                let jsonObject = loadJsonObject(documentText);
-                await promptForAttributeNameAndHandle(jsonObject);
-            }
-        }
+    // Registrar ambos comandos
+    const schemaDisposable = vscode.commands.registerCommand('schema-path-generator.SchemaPathGenerator', async function () {
+        await handlePathGeneration(false);
     });
     
-    context.subscriptions.push(disposable);
+    const formDisposable = vscode.commands.registerCommand('form-path-generator.FormPathGenerator', async function () {
+        await handlePathGeneration(true);
+    });
+
+    context.subscriptions.push(schemaDisposable, formDisposable);
 }
 
+async function handlePathGeneration(isFormPath) {
+    const editor = vscode.window.activeTextEditor;
+    if (!editor) return;
 
-// functions
+    const document = editor.document;
+    const selection = editor.selection;
+    let selectedAttribute = selection.isEmpty ? '' : document.getText(selection);
+
+    if (selectedAttribute) {
+        let jsonObject;
+        
+        if (isFormPath) {
+            // Para Form Path, usar el texto original sin modificar
+            jsonObject = loadJsonObject(document.getText());
+            await findSelectedAttributePaths(jsonObject, selectedAttribute, isFormPath);
+        } else {
+            // Para Schema Path, agregar ":" temporalmente para la búsqueda
+            const range = new vscode.Range(selection.start, selection.end);
+            let documentText = document.getText();
+            let modifiedText = documentText.substring(0, document.offsetAt(range.start)) + 
+                             ":" + selectedAttribute + 
+                             documentText.substring(document.offsetAt(range.end));
+            jsonObject = loadJsonObject(modifiedText);
+            await findSelectedAttributePaths(jsonObject, ":" + selectedAttribute, isFormPath);
+        }
+    } else {
+        // Cuando no hay selección
+        let documentText = document.getText();
+        let jsonObject = loadJsonObject(documentText);
+        await promptForAttributeNameAndHandle(jsonObject, isFormPath);
+    }
+}
+
 function findPaths(data, targetPhrase) {
     let result = [];
 
@@ -54,36 +60,35 @@ function findPaths(data, targetPhrase) {
             traverse(propAttribute.items, newPath);
         }
 
-        // Check if the target phrase is in the current path
         if (currPath.includes(targetPhrase)) {
             result.push(currPath);
         }
     }
 
-    traverse(data.Content, []);
-
-    result = [...new Set(result.reverse())]; // remove duplicates
+    if (data && data.Content) {
+        traverse(data.Content, []);
+        result = [...new Set(result.reverse())];
+    }
     return result;
 }
 
-async function findSelectedAttributePaths(jsonObject, selectedAttributeNewName) {
-    const paths = findPaths(jsonObject, selectedAttributeNewName);
+async function findSelectedAttributePaths(jsonObject, selectedAttribute, isFormPath) {
+    const searchPhrase = isFormPath ? selectedAttribute.replace(/^:/, '') : selectedAttribute;
+    const paths = findPaths(jsonObject, searchPhrase);
 
     if (paths.length === 0) {
-        selectedAttributeNewName = selectedAttributeNewName.replace(":", "");
-        vscode.window.showInformationMessage(`No attribute found with name: ${selectedAttributeNewName}`);
+        vscode.window.showInformationMessage(`No attribute found with name: ${selectedAttribute.replace(/^:/, '')}`);
     } else {
-        // remove ":" from path
-        let stringToCopy = arrayToString(paths[0]);
-        stringToCopy = stringToCopy.replace(/:/g, "");
+        let stringToCopy = isFormPath ? 
+            formatFormPath(paths[0]) : 
+            formatSchemaPath(paths[0]);
 
-        // copy path to clipboard
         await vscode.env.clipboard.writeText(stringToCopy);
         vscode.window.showInformationMessage(`Copied to clipboard: ${stringToCopy}`);
     }
 }
 
-async function promptForAttributeNameAndHandle(jsonObject) {
+async function promptForAttributeNameAndHandle(jsonObject, isFormPath) {
     const attributeName = await vscode.window.showInputBox({
         prompt: 'Enter attribute name'
     });
@@ -93,15 +98,15 @@ async function promptForAttributeNameAndHandle(jsonObject) {
         if (paths.length === 0) {
             vscode.window.showInformationMessage(`No attribute found with name: ${attributeName}`);
         } else {
-            await displayPaths(paths);
+            await displayPaths(paths, isFormPath);
         }
     }
 }
 
-async function displayPaths(paths) {
+async function displayPaths(paths, isFormPath) {
     const pathOptions = paths.map(path => ({
-        label: arrayToString(path),
-        detail: `Click to copy: ${arrayToString(path)}`
+        label: isFormPath ? formatFormPath(path) : formatSchemaPath(path),
+        detail: `Click to copy: ${isFormPath ? formatFormPath(path) : formatSchemaPath(path)}`
     }));
 
     const selectedPath = await vscode.window.showQuickPick(pathOptions, {
@@ -115,21 +120,42 @@ async function displayPaths(paths) {
     }
 }
 
-function arrayToString(arr) {
-    return `['${arr.join("']['")}']`;
+function formatSchemaPath(arr) {
+    const cleanPath = arr.map(segment => segment.replace(/^:/, ''));
+    return `['${cleanPath.join("']['")}']`;
+}
+
+function formatFormPath(arr) {
+    const formatSegment = (segment) => {
+        const cleanSegment = segment.replace(/^:/, '');
+        
+        // Si ya está en PascalCase o camelCase, no modificar
+        if (/^[A-Z][a-z]+(?:[A-Z][a-z]+)*$/.test(cleanSegment) || 
+            /^[a-z]+(?:[A-Z][a-z]+)*$/.test(cleanSegment)) {
+            return cleanSegment;
+        }
+        
+        // Formatear segmentos con espacios o guiones
+        const words = cleanSegment.split(/[\s-_]+/);
+        const capitalized = words.map(word => 
+            word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+        return capitalized.join('');
+    };
+
+    const formattedSegments = arr.map(formatSegment);
+    return formattedSegments.join('_');
 }
 
 function loadJsonObject(jsonText) {
-    // Loading Json
     try {
         return JSON.parse(jsonText);
     } catch (error) {
-        vscode.window.showErrorMessage('Error parsing JSON');
-        return;
+        vscode.window.showErrorMessage('Error parsing JSON: ' + error.message);
+        return null;
     }
 }
 
-function deactivate() { }
+function deactivate() {}
 
 module.exports = {
     activate,
